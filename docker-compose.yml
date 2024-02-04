@@ -21,18 +21,34 @@ services:
       POSTGRES_DB: prediction
     ports:
       - "5432:5432"
+    volumes:
+      - pg_data:/var/lib/postgresql/data
+    networks:
+      - prediction-network
+#    profiles:
+#      - dev
+#      - all
 
   prediction:
     build:
       context: ./prediction
     ports:
       - "8000:8000"
+    networks:
+      - prediction-network
     depends_on:
       - postgres
     environment:
       <<: *environment-defaults
     volumes:
       - static_volume:/app/static
+    restart: on-failure:5
+    healthcheck:
+      test: curl -f http://localhost:8000/api/health || exit 1
+      interval: 10s
+      timeout: 10s
+      retries: 3
+      start_period: 10s
 
   nginx:
     image: nginx:latest
@@ -41,7 +57,10 @@ services:
       - static_volume:/static
     ports:
       - "80:80"
+    networks:
+      - prediction-network
     depends_on:
+      - prediction-app
       - prediction
 
   prediction-app:
@@ -49,11 +68,18 @@ services:
       context: ./prediction-app
     ports:
       - "3000:3000"
+    networks:
+      - prediction-network
 
   redis:
     image: redis:latest
     ports:
       - "6379:6379"
+    networks:
+      - prediction-network
+#    profiles:
+#      - dev
+#      - all
 
   celery:
     build:
@@ -62,6 +88,8 @@ services:
     depends_on:
       - redis
       - postgres
+    networks:
+      - prediction-network
     environment:
       <<: *environment-defaults
 
@@ -72,9 +100,17 @@ services:
     depends_on:
       - redis
       - postgres
+      - celery
+    networks:
+      - prediction-network
     environment:
       <<: *environment-defaults
 
 
 volumes:
+  pg_data:
   static_volume:
+
+networks:
+  prediction-network:
+    driver: bridge
